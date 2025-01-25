@@ -1,11 +1,13 @@
 import os
-
-from torch.utils.data import DataLoader
+import random
+from torch.utils.data import DataLoader, ConcatDataset, Subset
 from torchvision import datasets, transforms
-from constants import BATCH_SIZE as BS, RESIZE_FACTOR as RESIZE
+from constants import BATCH_SIZE as BS, RESIZE
+from constants import HORFLIP, CROP, ROTATION
 
 
 def calculate_normalization(train_path):
+
     # Non-normalized transformation
     non_normalized_transform = transforms.Compose([
         transforms.Resize((RESIZE, RESIZE)),
@@ -13,8 +15,8 @@ def calculate_normalization(train_path):
     ])
 
     # Initializing a whole training set instance
-    train_set = datasets.ImageFolder(train_path, transform=non_normalized_transform)
-    train_loader = DataLoader(train_set, batch_size=BS, shuffle=False, num_workers=4)
+    train_set = datasets.ImageFolder(train_path, non_normalized_transform)
+    train_loader = DataLoader(train_set, BS, False)
 
     # Calculating dataset mean and std values
     mean = 0.0
@@ -46,5 +48,14 @@ def calculate_normalization(train_path):
     return train_transform
 
 
-def create_dataset(dir_path, transform):
-    return datasets.ImageFolder(dir_path, transform=transform)
+def augment_dataset(path_dir, threshold):
+    diseases = os.listdir(path_dir)
+
+    for disease_dir in diseases:
+        dis1 = os.path.join(path_dir, diseases[0])
+        print(os.listdir(dis1))
+    pass
+
+
+def create_dataset(dir_path, transforms):
+    return datasets.ImageFolder(dir_path, transforms)
