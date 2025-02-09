@@ -1,14 +1,19 @@
+import time
+import matplotlib
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-import torch.nn.functional as f
 import torch.optim as optim
-import torch.utils.data as data
-import torchvision.datasets as datasets
 import torchvision.models as models
 import torchvision.transforms as transforms
-from torchvision.models import EfficientNet_B1_Weights, EfficientNet_B0_Weights
-from constants import LR, NUM_EPOCHS
 from torch import cuda
+import numpy as np
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+
+from constants import LR, DECAY, NUM_EPOCHS
+
+matplotlib.use('TkAgg')
 
 
 # class ConvNet(nn.Module):
@@ -16,22 +21,35 @@ from torch import cuda
 #         super(ConvNet, self).__init__()
 
 def deploy_cnn(train_set):
-    efficientB0 = models.efficientnet_b1(weights=EfficientNet_B1_Weights.DEFAULT)
+    efficient_net = models.efficientnet_b3(weights=models.EfficientNet_B3_Weights.DEFAULT)
+
+    # for param in efficient_net.parameters():
+    #     param.requires_grad = False
+
     classes_num = len(train_set.classes)
     print(classes_num)
 
-    efficientB0.classifier[1] = nn.Linear(efficientB0.classifier[1].in_features, classes_num)
+    efficient_net.classifier[1] = nn.Linear(efficient_net.classifier[1].in_features, classes_num)
     device = 'cuda' if cuda.is_available() else 'cpu'
+    print(device)
 
-    return efficientB0.to(device)
+    return efficient_net.to(device)
 
 
 def train(model, train_loader, valid_loader):
     device = 'cuda' if cuda.is_available() else 'cpu'
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=LR)
+    optimizer = optim.Adamax(model.parameters(), lr=LR, weight_decay=DECAY)
 
+    train_losses = []
+    train_accs = []
+    valid_losses = []
+    valid_accs = []
+
+    start_time = time.time()
+
+    results = []
     for epoch in range(NUM_EPOCHS):
 
         model.train()
@@ -57,13 +75,24 @@ def train(model, train_loader, valid_loader):
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
 
-        print(f"Epoch #{epoch + 1}/{NUM_EPOCHS} ------- Loss: {running_loss / len(train_loader):4f}, "
-              f"Accuracy: {100 * correct / total:2f}%")
+        epoch_acc = 100 * correct / total
+        epoch_loss = running_loss / len(train_loader)
+
+        train_results = (f"Epoch #{epoch + 1}/{NUM_EPOCHS} ------- "
+                         f"Training Accuracy: {epoch_acc:.4f}%, "
+                         f"Loss: {epoch_loss:.4f}")
+
+        #print(train_results)
+
+        train_accs.append(epoch_acc)
+        train_losses.append(epoch_loss)
+
+        # VALIDATION
 
         model.eval()
-        val_loss = 0.0
-        val_correct = 0
-        val_total = 0
+        valid_loss = 0.0
+        valid_correct = 0
+        valid_total = 0
 
         with torch.no_grad():
             for inputs, labels in valid_loader:
@@ -71,32 +100,107 @@ def train(model, train_loader, valid_loader):
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
 
-                val_loss += loss.item()
+                valid_loss += loss.item()
                 _, predicted = outputs.max(1)
-                val_total += labels.size(0)
-                val_correct += predicted.eq(labels).sum().item()
+                valid_total += labels.size(0)
+                valid_correct += predicted.eq(labels).sum().item()
 
-            print(f"Validation Loss: {val_loss / len(valid_loader):.4f}, Accuracy: {100 * val_correct / val_total:.2f}%")
+            epoch_acc = 100 * valid_correct / valid_total
+            epoch_loss = valid_loss / len(valid_loader)
 
+            valid_results = (f"\n                     Validation Accuracy: {epoch_acc:.4f}%, "
+                             f"Loss: {epoch_loss:.4f}")
+
+            #print(valid_results)
+
+            results.append(train_results + valid_results)
+
+            valid_accs.append(epoch_acc)
+            valid_losses.append(epoch_loss)
+
+    end_time = time.time()
+    summary = end_time - start_time
+
+    print("Time for network processing:", summary)
+
+    for elem in results:
+        print(elem)
+
+    show_stats(train_accs, train_losses, valid_accs, valid_losses)
     return model
 
 
-def test(model, test_set, tensor_num):
+# def test(model, test_set, tensor_num):
+#     device = 'cuda' if cuda.is_available() else 'cpu'
+#
+#     test_model = model.to(device)
+#
+#     img_tensor, actual_label = test_set[tensor_num]
+#     to_pil = transforms.ToPILImage()
+#     image_to_test = to_pil(img_tensor)
+#     img_tensor = img_tensor.unsqueeze(0).to(device)
+#
+#     with torch.no_grad():
+#         outputs = test_model(img_tensor)
+#
+#     _, predicted_class = torch.max(outputs.data, 1)
+#     predicted_class_name = test_set.classes[predicted_class.item()]
+#
+#     print(f"Actual: {test_set.classes[actual_label]}")
+#     print(f"Predicted: {predicted_class_name}\n")
+#     image_to_test.show()
+
+def test(model, test_loader, class_names):
+    true_labels = []
+    predicted_labels = []
+
     device = 'cuda' if cuda.is_available() else 'cpu'
-
-    my_efficientB0 = model.to(device)
-
-    img_tensor, actual_label = test_set[tensor_num]
-    to_pil = transforms.ToPILImage()
-    image_to_test = to_pil(img_tensor)
-    img_tensor = img_tensor.unsqueeze(0).to(device)
+    model = model.to(device)
 
     with torch.no_grad():
-        outputs = my_efficientB0(img_tensor)
+        for images, labels in test_loader:
+            images = images.to(device)
+            labels = labels.to(device)
 
-    _, predicted_class = torch.max(outputs.data, 1)
-    predicted_class_name = test_set.classes[predicted_class.item()]
+            outputs = model(images)
 
-    print(f"Actual: {test_set.classes[actual_label]}")
-    print(f"Predicted: {predicted_class_name}\n")
-    image_to_test.show()
+            _, preds = torch.max(outputs, 1)
+
+            true_labels.extend(labels.cpu().numpy())
+            predicted_labels.extend(preds.cpu().numpy())
+
+    conf_matrix = confusion_matrix(true_labels, predicted_labels)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(conf_matrix, annot=True, fmt='d', cmap="Blues",
+                xticklabels=class_names, yticklabels=class_names)
+
+    plt.xticks(rotation=45, ha='right', rotation_mode='anchor')
+    plt.yticks(rotation=0, va='center')
+
+    plt.subplots_adjust(left=0.21, right=0.886, top=0.9, bottom=0.233)
+
+    plt.xlabel("Predicted labels")
+    plt.xlabel("True labels")
+    plt.xlabel("Confusion matrix test")
+    plt.show()
+
+
+def show_stats(train_accs, train_losses, valid_accs, valid_losses):
+    epochs = range(1, NUM_EPOCHS + 1)
+
+    plt.plot(epochs, train_accs, 'y', label='Training accuracy')
+    plt.plot(epochs, valid_accs, 'r', label='Validation accuracy')
+    plt.title('Training and validation accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.show()
+
+    plt.plot(epochs, train_losses, 'y', label='Training loss')
+    plt.plot(epochs, valid_losses, 'r', label='Validation loss')
+    plt.title('Training and validation loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.show()

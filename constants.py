@@ -1,32 +1,31 @@
-from torchvision import transforms
-from torch import optim
+from torch import float32
+from torchvision.transforms import v2
 
 PATH_TRAIN = r'C:\Users\tymop\OneDrive\Робочий стіл\Курсова\dataset\train'
 PATH_VALID = r'C:\Users\tymop\OneDrive\Робочий стіл\Курсова\dataset\valid'
 PATH_TEST = r'C:\Users\tymop\OneDrive\Робочий стіл\Курсова\dataset\test'
 DATASET_PATH = r'C:\Users\tymop\OneDrive\Робочий стіл\Курсова\dataset'
 
+IMAGES = 5733
 LR = 0.001
+DECAY = 0.000018
 BATCH_SIZE = 32
-RESIZE = 224
-NUM_EPOCHS = 1
-NORMALIZATION_DEFAULT = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    # transforms.Normalize((0.4523, 0.4814, 0.3338),  (0.2279, 0.2170, 0.2207)),
+RESIZE_B0 = 224  # Default EfficientNet B0 input image size
+RESIZE_B3 = 300  # Default EfficientNet B3 input image size
+NUM_EPOCHS = 10
+
+AUGMENT_TRANSFORM_SUNFLOWER = v2.Compose([
+    v2.Resize((RESIZE_B3, RESIZE_B3)),
+    v2.ToImage(),
+    v2.ToDtype(float32, scale=True),
+    v2.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),  # ImageNet EfficientNet parameters
+    v2.RandomRotation(30),
+    v2.RandomHorizontalFlip(),
 ])
 
-HORFLIP = transforms.Compose([
-    transforms.RandomHorizontalFlip(0.5),
-    transforms.ToTensor()
-])
-
-ROTATION = transforms.Compose([
-    transforms.RandomRotation(degrees=15),
-    transforms.ToTensor()
-])
-
-CROP = transforms.Compose([
-    transforms.RandomResizedCrop(128),
-    transforms.ToTensor()
+NO_AUGMENT_TRANSFORM = v2.Compose([
+    v2.Resize((RESIZE_B3, RESIZE_B3)),
+    v2.ToImage(),
+    v2.ToDtype(float32, scale=True),
+    v2.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))  # ImageNet EfficientNet parameters
 ])
